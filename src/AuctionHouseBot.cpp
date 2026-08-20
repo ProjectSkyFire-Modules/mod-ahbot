@@ -32,11 +32,13 @@
 #include "Item.h"
 #include "ItemPrototype.h"
 #include "SharedDefines.h"
+#include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "DBCEnums.h"
 #include "DBCStores.h"
 #include "ObjectAccessor.h"
 #include "Log.h"
+#include "Util.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -45,6 +47,17 @@
 #include <unordered_map>
 
 using namespace std;
+
+namespace
+{
+// SkyFire has no free-function urand(); scripts use Object/Spell helpers instead.
+uint32 urand(uint32 min, uint32 max)
+{
+    if (max <= min)
+        return min;
+    return min + (uint32(rand32()) % (max - min + 1));
+}
+}
 
 AuctionHouseBot::AuctionHouseBot() :
     debug_Out(false),
@@ -229,7 +242,7 @@ uint32 AuctionHouseBot::GetStackSizeForItem(ItemTemplate const* itemProto) const
         case ITEM_CLASS_QUIVER:         stackRatio = RandomStackRatioQuiver; break;
         case ITEM_CLASS_QUEST:          stackRatio = RandomStackRatioQuest; break;
         case ITEM_CLASS_KEY:            stackRatio = RandomStackRatioKey; break;
-        case ITEM_CLASS_MISC:           stackRatio = RandomStackRatioMisc; break;
+        case ITEM_CLASS_MISCELLANEOUS:           stackRatio = RandomStackRatioMisc; break;
         case ITEM_CLASS_GLYPH:          stackRatio = RandomStackRatioGlyph; break;
         default:                        stackRatio = 0; break;
     }
@@ -250,7 +263,7 @@ uint32 AuctionHouseBot::GetStackSizeForItem(ItemTemplate const* itemProto) const
         case ITEM_CLASS_QUIVER:         stackIncrement = RandomStackIncrementQuiver; break;
         case ITEM_CLASS_QUEST:          stackIncrement = RandomStackIncrementQuest; break;
         case ITEM_CLASS_KEY:            stackIncrement = RandomStackIncrementKey; break;
-        case ITEM_CLASS_MISC:           stackIncrement = RandomStackIncrementMisc; break;
+        case ITEM_CLASS_MISCELLANEOUS:           stackIncrement = RandomStackIncrementMisc; break;
         case ITEM_CLASS_GLYPH:          stackIncrement = RandomStackIncrementGlyph; break;
         default:                        stackIncrement = 1; break;
     }
@@ -272,7 +285,7 @@ uint32 AuctionHouseBot::GetStackSizeForItem(ItemTemplate const* itemProto) const
         case ITEM_CLASS_QUIVER:         configStackSizeMax = MaximumStackSizeQuiver; break;
         case ITEM_CLASS_QUEST:          configStackSizeMax = MaximumStackSizeQuest; break;
         case ITEM_CLASS_KEY:            configStackSizeMax = MaximumStackSizeKey; break;
-        case ITEM_CLASS_MISC:           configStackSizeMax = MaximumStackSizeMisc; break;
+        case ITEM_CLASS_MISCELLANEOUS:           configStackSizeMax = MaximumStackSizeMisc; break;
         case ITEM_CLASS_GLYPH:          configStackSizeMax = MaximumStackSizeGlyph; break;
         default:                        configStackSizeMax = 0; break;
     }
@@ -342,7 +355,7 @@ void AuctionHouseBot::CalculateItemValue(ItemTemplate const* itemProto, uint64& 
     case ITEM_CLASS_QUIVER:         classPriceMultiplier = PriceMultiplierCategoryQuiver; break;
     case ITEM_CLASS_QUEST:          classPriceMultiplier = PriceMultiplierCategoryQuest; break;
     case ITEM_CLASS_KEY:            classPriceMultiplier = PriceMultiplierCategoryKey; break;
-    case ITEM_CLASS_MISC:           classPriceMultiplier = PriceMultiplierCategoryMisc; break;
+    case ITEM_CLASS_MISCELLANEOUS:           classPriceMultiplier = PriceMultiplierCategoryMisc; break;
     case ITEM_CLASS_GLYPH:          classPriceMultiplier = PriceMultiplierCategoryGlyph; break;
     default:                        break;
     }
@@ -390,7 +403,7 @@ void AuctionHouseBot::CalculateItemValue(ItemTemplate const* itemProto, uint64& 
         case ITEM_CLASS_QUIVER:         PriceMinimumCenterBase = PriceMinimumCenterBaseQuiver; break;
         case ITEM_CLASS_QUEST:          PriceMinimumCenterBase = PriceMinimumCenterBaseQuest; break;
         case ITEM_CLASS_KEY:            PriceMinimumCenterBase = PriceMinimumCenterBaseKey; break;
-        case ITEM_CLASS_MISC:           PriceMinimumCenterBase = PriceMinimumCenterBaseMisc; break;
+        case ITEM_CLASS_MISCELLANEOUS:           PriceMinimumCenterBase = PriceMinimumCenterBaseMisc; break;
         case ITEM_CLASS_GLYPH:          PriceMinimumCenterBase = PriceMinimumCenterBaseGlyph; break;
         default:                        break;
         }
@@ -429,7 +442,7 @@ void AuctionHouseBot::CalculateItemValue(ItemTemplate const* itemProto, uint64& 
         case ITEM_CLASS_QUIVER:         itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryQuiver; break;
         case ITEM_CLASS_QUEST:          itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryQuest; break;
         case ITEM_CLASS_KEY:            itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryKey; break;
-        case ITEM_CLASS_MISC:           itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryMisc; break;
+        case ITEM_CLASS_MISCELLANEOUS:           itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryMisc; break;
         case ITEM_CLASS_GLYPH:          itemLevelPriceMultplier = PriceMultiplierItemLevelCategoryGlyph; break;
         default:                        break;
     }
@@ -592,7 +605,7 @@ float AuctionHouseBot::GetAdvancedPricingMultiplier(ItemTemplate const* itemProt
                 break;
         }
     }
-    else if (itemProto->Class == ITEM_CLASS_MISC)
+    else if (itemProto->Class == ITEM_CLASS_MISCELLANEOUS)
     {
         switch (itemProto->SubClass)
         {
@@ -660,11 +673,11 @@ ItemTemplate const* AuctionHouseBot::GetProducedItemFromRecipe(ItemTemplate cons
             if (!spellInfo)
                 continue;
 
-            for (auto const& effect : spellInfo->Effects)
+            for (uint8 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
             {
-                if (effect.Effect == SPELL_EFFECT_CREATE_ITEM)
+                if (spellInfo->Effects[effIndex].Effect == SPELL_EFFECT_CREATE_ITEM)
                 {
-                    uint32 createdItemId = effect.ItemType;
+                    uint32 createdItemId = spellInfo->Effects[effIndex].ItemType;
                     if (createdItemId)
                     {
                         ItemTemplate const* producedItem = sObjectMgr->GetItemTemplate(createdItemId);
@@ -1701,8 +1714,8 @@ void AuctionHouseBot::AddNewAuctionBuyerBotBid(std::vector<Player*> AHBPlayers, 
             AHBotLogInfo("-------------------------------------------------");
             AHBotLogInfo("AHBuyer: Info for Auction #{}:", auction->Id);
             AHBotLogInfo("AHBuyer: AuctionHouse: {}", auction->GetHouseId());
-            AHBotLogInfo("AHBuyer: Owner: {}", auction->owner.ToString());
-            AHBotLogInfo("AHBuyer: Bidder: {}", auction->bidder.ToString());
+            AHBotLogInfo("AHBuyer: Owner: {}", auction->owner);
+            AHBotLogInfo("AHBuyer: Bidder: {}", auction->bidder);
             AHBotLogInfo("AHBuyer: Expire Time: {}", uint32(auction->expire_time));
             AHBotLogInfo("AHBuyer: Item GUID: {}", std::to_string(auction->itemGUIDLow));
             AHBotLogInfo("AHBuyer: Item Template: {}", auction->itemEntry);
@@ -2541,7 +2554,7 @@ const char* AuctionHouseBot::GetCategoryName(ItemClass category)
         case ITEM_CLASS_QUEST:        return "Quest";
         case ITEM_CLASS_KEY:          return "Key";
         case ITEM_CLASS_PERMANENT:    return "Permanent";
-        case ITEM_CLASS_MISC:         return "Misc";
+        case ITEM_CLASS_MISCELLANEOUS:         return "Misc";
         case ITEM_CLASS_GLYPH:        return "Glyph";
         default:                      return "Unknown";
     }
