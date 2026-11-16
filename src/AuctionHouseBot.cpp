@@ -48,17 +48,6 @@
 
 using namespace std;
 
-namespace
-{
-// SkyFire has no free-function urand(); scripts use Object/Spell helpers instead.
-uint32 urand(uint32 min, uint32 max)
-{
-    if (max <= min)
-        return min;
-    return min + (uint32(rand32()) % (max - min + 1));
-}
-}
-
 AuctionHouseBot::AuctionHouseBot() :
     debug_Out(false),
     debug_Out_Filters(false),
@@ -1822,10 +1811,11 @@ void AuctionHouseBot::Update()
     {
         CurrentBotCharGUID = AHCharacters[botIndex].CharacterGUID;
 
+        SessionKey emptyKey{};
         auto session = std::make_unique<WorldSession>(
             AHCharacters[botIndex].AccountID, nullptr, AccountTypes::SEC_PLAYER,
             uint8(sWorld->getIntConfig(WorldIntConfigs::CONFIG_EXPANSION)),
-            0, LOCALE_enUS, 0, false, false, false);
+            0, LOCALE_enUS, 0, false, false, false, false, std::string(), emptyKey);
         auto player = std::make_unique<Player>(session.get());
         player->Initialize(AHCharacters[botIndex].CharacterGUID);
         AHBPlayers.emplace_back(std::move(player), std::move(session));
